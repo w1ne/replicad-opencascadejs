@@ -2606,6 +2606,48 @@ export declare class HLRBRep_Algo extends HLRBRep_InternalAlgo {
     constructor(A: Handle_HLRBRep_Algo);
   }
 
+export declare class TColStd_Array2OfReal {
+  Init(theValue: Standard_Real): void;
+  Size(): Standard_Integer;
+  Length(): Standard_Integer;
+  NbRows(): Standard_Integer;
+  NbColumns(): Standard_Integer;
+  RowLength(): Standard_Integer;
+  ColLength(): Standard_Integer;
+  LowerRow(): Standard_Integer;
+  UpperRow(): Standard_Integer;
+  LowerCol(): Standard_Integer;
+  UpperCol(): Standard_Integer;
+  IsDeletable(): Standard_Boolean;
+  Assign(theOther: TColStd_Array2OfReal): TColStd_Array2OfReal;
+  Move(theOther: TColStd_Array2OfReal): TColStd_Array2OfReal;
+  Value(theRow: Standard_Integer, theCol: Standard_Integer): Standard_Real;
+  ChangeValue(theRow: Standard_Integer, theCol: Standard_Integer): Standard_Real;
+  SetValue(theRow: Standard_Integer, theCol: Standard_Integer, theItem: Standard_Real): void;
+  Resize(theRowLower: Standard_Integer, theRowUpper: Standard_Integer, theColLower: Standard_Integer, theColUpper: Standard_Integer, theToCopyData: Standard_Boolean): void;
+  delete(): void;
+}
+
+  export declare class TColStd_Array2OfReal_1 extends TColStd_Array2OfReal {
+    constructor();
+  }
+
+  export declare class TColStd_Array2OfReal_2 extends TColStd_Array2OfReal {
+    constructor(theRowLower: Standard_Integer, theRowUpper: Standard_Integer, theColLower: Standard_Integer, theColUpper: Standard_Integer);
+  }
+
+  export declare class TColStd_Array2OfReal_3 extends TColStd_Array2OfReal {
+    constructor(theOther: TColStd_Array2OfReal);
+  }
+
+  export declare class TColStd_Array2OfReal_4 extends TColStd_Array2OfReal {
+    constructor(theOther: TColStd_Array2OfReal);
+  }
+
+  export declare class TColStd_Array2OfReal_5 extends TColStd_Array2OfReal {
+    constructor(theBegin: Standard_Real, theRowLower: Standard_Integer, theRowUpper: Standard_Integer, theColLower: Standard_Integer, theColUpper: Standard_Integer);
+  }
+
 export declare class TColStd_Array1OfBoolean {
   begin(): any;
   end(): any;
@@ -2775,6 +2817,31 @@ export declare class BRepFeat_MakeDPrism extends BRepFeat_Form {
 
   export declare class BRepFeat_MakeDPrism_2 extends BRepFeat_MakeDPrism {
     constructor();
+  }
+
+export declare class BRepFeat_SplitShape extends BRepBuilderAPI_MakeShape {
+  Add_1(theEdges: TopTools_SequenceOfShape): Standard_Boolean;
+  Init(S: TopoDS_Shape): void;
+  SetCheckInterior(ToCheckInterior: Standard_Boolean): void;
+  Add_2(W: TopoDS_Wire, F: TopoDS_Face): void;
+  Add_3(E: TopoDS_Edge, F: TopoDS_Face): void;
+  Add_4(Comp: TopoDS_Compound, F: TopoDS_Face): void;
+  Add_5(E: TopoDS_Edge, EOn: TopoDS_Edge): void;
+  DirectLeft(): TopTools_ListOfShape;
+  Left(): TopTools_ListOfShape;
+  Right(): TopTools_ListOfShape;
+  Build(theRange: Message_ProgressRange): void;
+  IsDeleted(S: TopoDS_Shape): Standard_Boolean;
+  Modified(F: TopoDS_Shape): TopTools_ListOfShape;
+  delete(): void;
+}
+
+  export declare class BRepFeat_SplitShape_1 extends BRepFeat_SplitShape {
+    constructor();
+  }
+
+  export declare class BRepFeat_SplitShape_2 extends BRepFeat_SplitShape {
+    constructor(S: TopoDS_Shape);
   }
 
 export declare class BRepFeat_Form extends BRepBuilderAPI_MakeShape {
@@ -8542,6 +8609,12 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   HLRBRep_Algo: typeof HLRBRep_Algo;
   HLRBRep_Algo_1: typeof HLRBRep_Algo_1;
   HLRBRep_Algo_2: typeof HLRBRep_Algo_2;
+  TColStd_Array2OfReal: typeof TColStd_Array2OfReal;
+  TColStd_Array2OfReal_1: typeof TColStd_Array2OfReal_1;
+  TColStd_Array2OfReal_2: typeof TColStd_Array2OfReal_2;
+  TColStd_Array2OfReal_3: typeof TColStd_Array2OfReal_3;
+  TColStd_Array2OfReal_4: typeof TColStd_Array2OfReal_4;
+  TColStd_Array2OfReal_5: typeof TColStd_Array2OfReal_5;
   TColStd_Array1OfBoolean: typeof TColStd_Array1OfBoolean;
   TColStd_Array1OfBoolean_1: typeof TColStd_Array1OfBoolean_1;
   TColStd_Array1OfBoolean_2: typeof TColStd_Array1OfBoolean_2;
@@ -8564,6 +8637,9 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   BRepFeat_MakeDPrism: typeof BRepFeat_MakeDPrism;
   BRepFeat_MakeDPrism_1: typeof BRepFeat_MakeDPrism_1;
   BRepFeat_MakeDPrism_2: typeof BRepFeat_MakeDPrism_2;
+  BRepFeat_SplitShape: typeof BRepFeat_SplitShape;
+  BRepFeat_SplitShape_1: typeof BRepFeat_SplitShape_1;
+  BRepFeat_SplitShape_2: typeof BRepFeat_SplitShape_2;
   BRepFeat_Form: typeof BRepFeat_Form;
   XCAFDoc_DocumentTool: typeof XCAFDoc_DocumentTool;
   Handle_XCAFDoc_ColorTool: typeof Handle_XCAFDoc_ColorTool;

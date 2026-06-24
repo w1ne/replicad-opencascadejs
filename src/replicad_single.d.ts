@@ -2781,6 +2781,31 @@ export declare class BRepFeat_MakeDPrism extends BRepFeat_Form {
     constructor();
   }
 
+export declare class BRepFeat_SplitShape extends BRepBuilderAPI_MakeShape {
+  Add_1(theEdges: TopTools_SequenceOfShape): Standard_Boolean;
+  Init(S: TopoDS_Shape): void;
+  SetCheckInterior(ToCheckInterior: Standard_Boolean): void;
+  Add_2(W: TopoDS_Wire, F: TopoDS_Face): void;
+  Add_3(E: TopoDS_Edge, F: TopoDS_Face): void;
+  Add_4(Comp: TopoDS_Compound, F: TopoDS_Face): void;
+  Add_5(E: TopoDS_Edge, EOn: TopoDS_Edge): void;
+  DirectLeft(): TopTools_ListOfShape;
+  Left(): TopTools_ListOfShape;
+  Right(): TopTools_ListOfShape;
+  Build(theRange: Message_ProgressRange): void;
+  IsDeleted(S: TopoDS_Shape): Standard_Boolean;
+  Modified(F: TopoDS_Shape): TopTools_ListOfShape;
+  delete(): void;
+}
+
+  export declare class BRepFeat_SplitShape_1 extends BRepFeat_SplitShape {
+    constructor();
+  }
+
+  export declare class BRepFeat_SplitShape_2 extends BRepFeat_SplitShape {
+    constructor(S: TopoDS_Shape);
+  }
+
 export declare class BRepFeat_Form extends BRepBuilderAPI_MakeShape {
   Modified(F: TopoDS_Shape): TopTools_ListOfShape;
   Generated(S: TopoDS_Shape): TopTools_ListOfShape;
@@ -8563,6 +8588,9 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   BRepFeat_MakeDPrism: typeof BRepFeat_MakeDPrism;
   BRepFeat_MakeDPrism_1: typeof BRepFeat_MakeDPrism_1;
   BRepFeat_MakeDPrism_2: typeof BRepFeat_MakeDPrism_2;
+  BRepFeat_SplitShape: typeof BRepFeat_SplitShape;
+  BRepFeat_SplitShape_1: typeof BRepFeat_SplitShape_1;
+  BRepFeat_SplitShape_2: typeof BRepFeat_SplitShape_2;
   BRepFeat_Form: typeof BRepFeat_Form;
   XCAFDoc_DocumentTool: typeof XCAFDoc_DocumentTool;
   Handle_XCAFDoc_ColorTool: typeof Handle_XCAFDoc_ColorTool;

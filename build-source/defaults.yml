@@ -239,6 +239,7 @@
     - symbol: BRepFilletAPI_MakeChamfer
     - symbol: BRepFeat_MakeDPrism
     - symbol: BRepFeat_Form
+    - symbol: BRepFeat_SplitShape
     - symbol: ChFi3d_FilletShape
     - symbol: ChFiDS_ChamfMode
     - symbol: GeomAbs_JoinType
