@@ -16,8 +16,9 @@ long-lived kernels climbed until they hit their memory cap.
 The replacement destroys the object unless that is unsafe:
   - a non-public or deleted destructor (the generator's other reason for the
     no-op) cannot be called;
-  - Standard_Transient subclasses are owned by OCCT handles (reference
-    counted), so a JavaScript delete must not free them under a handle;
+  - a Standard_Transient subclass is owned by OCCT handles (reference
+    counted) once one holds it, so it is freed only while its count is 0
+    (created from JavaScript and never handed to a handle);
   - abstract classes are only ever reached through a base pointer.
 
 Run inside the opencascade.js image, before buildFromYaml.py, with the build
@@ -44,8 +45,12 @@ HELPER = """
 #ifndef KCAD_RAW_DESTROY
 #define KCAD_RAW_DESTROY
 template <typename T> inline void kcadRawDestroy(T* ptr) {
-  if constexpr (std::is_destructible<T>::value && !std::is_abstract<T>::value &&
-                !std::is_base_of<Standard_Transient, T>::value) {
+  if constexpr (!std::is_destructible<T>::value || std::is_abstract<T>::value) {
+    // Not callable, or only reachable through a base pointer: leave it.
+  } else if constexpr (std::is_base_of<Standard_Transient, T>::value) {
+    // Owned by OCCT handles once one holds it; free it only when none does.
+    if (ptr->GetRefCount() == 0) delete ptr;
+  } else {
     delete ptr;
   }
 }
@@ -70,7 +75,7 @@ def binding_sources(symbols):
 def patch(path):
     with open(path) as f:
         src = f.read()
-    if "kcadRawDestroy" in src or not NOOP.search(src):
+    if not NOOP.search(src):
         return False
     src = NOOP.sub(lambda m: f"template<> void raw_destructor<{m['t']}>({m['t']}* ptr) {{ kcadRawDestroy(ptr); }}", src)
     # The helper must precede the specializations, which sit after the
