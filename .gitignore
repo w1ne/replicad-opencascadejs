@@ -4,3 +4,6 @@ node_modules
 /build-config/*.provenance.json
 /dist/*.build-manifest.json
 /dist/*.provenance.json
+/build-config/replicad_*.js
+/build-config/replicad_*.wasm
+/build-config/replicad_*.d.ts
