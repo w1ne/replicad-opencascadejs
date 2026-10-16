@@ -16,9 +16,9 @@ long-lived kernels climbed until they hit their memory cap.
 The replacement destroys the object unless that is unsafe:
   - a non-public or deleted destructor (the generator's other reason for the
     no-op) cannot be called;
-  - a Standard_Transient subclass is owned by OCCT handles (reference
-    counted) once one holds it, so it is freed only while its count is 0
-    (created from JavaScript and never handed to a handle);
+  - a Standard_Transient subclass belongs to OCCT handles (reference
+    counted). A handle may already have freed it, so not even its reference
+    count can be read safely here; its handles free it.
   - abstract classes are only ever reached through a base pointer.
 
 Run inside the opencascade.js image, before buildFromYaml.py, with the build
@@ -44,15 +44,14 @@ HELPER = """
 #include <Standard_Transient.hxx>
 #ifndef KCAD_RAW_DESTROY
 #define KCAD_RAW_DESTROY
+// Tag dispatch, not `if constexpr`: the bindings compile as C++14, and only
+// the selected overload instantiates `delete ptr`.
+template <typename T> inline void kcadRawDestroyImpl(T* ptr, std::true_type) { delete ptr; }
+template <typename T> inline void kcadRawDestroyImpl(T*, std::false_type) {}
 template <typename T> inline void kcadRawDestroy(T* ptr) {
-  if constexpr (!std::is_destructible<T>::value || std::is_abstract<T>::value) {
-    // Not callable, or only reachable through a base pointer: leave it.
-  } else if constexpr (std::is_base_of<Standard_Transient, T>::value) {
-    // Owned by OCCT handles once one holds it; free it only when none does.
-    if (ptr->GetRefCount() == 0) delete ptr;
-  } else {
-    delete ptr;
-  }
+  kcadRawDestroyImpl(ptr, std::integral_constant<bool,
+    std::is_destructible<T>::value && !std::is_abstract<T>::value &&
+    !std::is_base_of<Standard_Transient, T>::value>());
 }
 #endif
 """
