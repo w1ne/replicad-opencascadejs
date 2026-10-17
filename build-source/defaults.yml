@@ -265,6 +265,9 @@
     - symbol: HLRBRep_InternalAlgo
     - symbol: HLRAlgo_Projector
     - symbol: HLRBRep_HLRToShape
+    - symbol: HLRBRep_PolyAlgo
+    - symbol: Handle_HLRBRep_PolyAlgo
+    - symbol: HLRBRep_PolyHLRToShape
 
     - symbol: CDM_Document
     - symbol: TDF_Attribute

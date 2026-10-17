@@ -45,6 +45,24 @@ reported, not failed on — those are the intentional divergence listed below.
 | `BRepProj_Projection` | curve-on-surface projection |
 | `STEPCAFControl_Reader` | STEP import with colors/names/assembly tree |
 | `GPropWrapper` | inertia tensor + principal axes, see below |
+| `HLRBRep_PolyAlgo`, `Handle_HLRBRep_PolyAlgo`, `HLRBRep_PolyHLRToShape` | polygonal hidden-line removal for mesh-derived (STL) parts; exact HLR on 65k facets needs ~1.5 GB per drawing view |
+
+### Real destructors (`scripts/fix-destructors.py`)
+
+opencascade.js emits a no-op embind destructor for every class that declares a
+two-argument `operator delete`, which OCCT's `DEFINE_STANDARD_ALLOC` does on
+`TopoDS_Shape` and most value and algorithm classes. Built as-is, `obj.delete()`
+from JavaScript never runs the C++ destructor: a deleted shape keeps its whole
+B-rep alive, and a deleted `BRepCheck_Analyzer` or `BRepFilletAPI_MakeFillet`
+keeps its working data. The WASM heap only grows, so long-lived kernels climb to
+their memory cap.
+
+`buildSingle` / `buildWithExceptions` run `scripts/fix-destructors.py` inside the
+image before `buildFromYaml.py`. It rewrites the no-op for the linked bindings to
+`delete` the object unless its destructor is not public, the class is abstract,
+or it is a `Standard_Transient` (owned by OCCT handles, which free it; reading its
+reference count from JavaScript could touch memory a handle already freed), then
+recompiles only those bindings. Do not build without it.
 
 ### The unbound-return-type trap
 
