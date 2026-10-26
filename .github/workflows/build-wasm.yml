@@ -1,0 +1,54 @@
+name: Build OCCT WASM bindings
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'build-source/**'
+      - 'scripts/fix-destructors.py'
+      - '.github/workflows/build-wasm.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install ytt
+        run: |
+          curl -fsSL https://github.com/carvel-dev/ytt/releases/download/v0.55.4/ytt-linux-amd64 -o "$RUNNER_TEMP/ytt"
+          echo '214138d930f5865d561b62f3acba79207afb02c1d87814eb2a2693ea8a33fb9d  '"$RUNNER_TEMP/ytt" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/ytt"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Generate OCCT build configuration
+        run: |
+          ytt -f build-source --output-files build-config
+          chmod 644 build-config/*.yml
+      - name: Build single and exception-enabled bindings
+        working-directory: build-config
+        run: |
+          cp ../scripts/fix-destructors.py .
+          OCCT_IMAGE='docker.io/donalffons/opencascade.js@sha256:3069f4c2e3ab62bb82d81843bad2c0f8552ee92373208f8f655ef9bf71c0524d'
+          docker pull "$OCCT_IMAGE"
+          docker run --rm -v "$PWD":/src -w /src \
+            -u "$(id -u):$(id -g)" --entrypoint sh "$OCCT_IMAGE" \
+            -c 'python3 /src/fix-destructors.py custom_build_single.yml && /opencascade.js/src/buildFromYaml.py custom_build_single.yml'
+          mv replicad_single* ../src
+          docker run --rm -v "$PWD":/src -w /src \
+            -u "$(id -u):$(id -g)" --entrypoint sh "$OCCT_IMAGE" \
+            -c 'python3 /src/fix-destructors.py custom_build_with_exceptions.yml && /opencascade.js/src/buildFromYaml.py custom_build_with_exceptions.yml'
+          mv replicad_with_exceptions* ../src
+      - uses: actions/upload-artifact@v7
+        with:
+          name: replicad-opencascadejs-wasm
+          path: |
+            src/replicad_single.js
+            src/replicad_single.wasm
+            src/replicad_single.d.ts
+            src/replicad_with_exceptions.js
+            src/replicad_with_exceptions.wasm
+            src/replicad_with_exceptions.d.ts
+          if-no-files-found: error

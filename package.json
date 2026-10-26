@@ -1,6 +1,6 @@
 {
   "name": "replicad-opencascadejs",
-  "version": "0.23.0",
+  "version": "0.25.1",
   "description": "OpencascadeJS custom build for replicad",
   "author": "Steve Genoud <steve@sgenoud.com>",
   "homepage": "",
@@ -18,7 +18,7 @@
     "buildWasm": "pnpm run generateConfig && pnpm run buildSingle && pnpm run buildWithExceptions",
     "updateDocker": "docker pull donalffons/opencascade.js",
     "generateConfig": "ytt -f build-source/ --output-files build-config",
-    "buildSingle": "cd build-config; docker run -it --rm -v $(pwd):/src -u $(id -u):$(id -g) donalffons/opencascade.js custom_build_single.yml && mv replicad_single* ../src; cd -",
-    "buildWithExceptions": "cd build-config; docker run -it --rm -v $(pwd):/src -u $(id -u):$(id -g) donalffons/opencascade.js custom_build_with_exceptions.yml && mv replicad_with_exceptions* ../src; cd -"
+    "buildSingle": "cd build-config; cp ../scripts/fix-destructors.py . && docker run -it --rm -v $(pwd):/src -u $(id -u):$(id -g) --entrypoint sh donalffons/opencascade.js -c 'python3 /src/fix-destructors.py custom_build_single.yml && /opencascade.js/src/buildFromYaml.py custom_build_single.yml' && mv replicad_single* ../src; cd -",
+    "buildWithExceptions": "cd build-config; cp ../scripts/fix-destructors.py . && docker run -it --rm -v $(pwd):/src -u $(id -u):$(id -g) --entrypoint sh donalffons/opencascade.js -c 'python3 /src/fix-destructors.py custom_build_with_exceptions.yml && /opencascade.js/src/buildFromYaml.py custom_build_with_exceptions.yml' && mv replicad_with_exceptions* ../src; cd -"
   }
 }

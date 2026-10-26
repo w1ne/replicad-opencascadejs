@@ -10,6 +10,7 @@
     - symbol: TColgp_Array1OfVec
     - symbol: TColStd_Array1OfInteger
     - symbol: TColStd_Array1OfReal
+    - symbol: TColStd_Array2OfReal
     - symbol: Poly_Array1OfTriangle
     - symbol: Standard_Transient
     - symbol: Precision
@@ -238,6 +239,7 @@
     - symbol: BRepFilletAPI_MakeChamfer
     - symbol: BRepFeat_MakeDPrism
     - symbol: BRepFeat_Form
+    - symbol: BRepFeat_SplitShape
     - symbol: ChFi3d_FilletShape
     - symbol: ChFiDS_ChamfMode
     - symbol: GeomAbs_JoinType
@@ -263,6 +265,9 @@
     - symbol: HLRBRep_InternalAlgo
     - symbol: HLRAlgo_Projector
     - symbol: HLRBRep_HLRToShape
+    - symbol: HLRBRep_PolyAlgo
+    - symbol: Handle_HLRBRep_PolyAlgo
+    - symbol: HLRBRep_PolyHLRToShape
 
     - symbol: CDM_Document
     - symbol: TDF_Attribute
@@ -293,6 +298,37 @@
     - symbol: BRepToolsWrapper
     - symbol: GeomToolsWrapper
 
+    #! 2D tangency constructors (Geom2dGcc) — tangent arc/line construction.
+    #! gp_Lin2d is REQUIRED, not optional: the Lin2d* constructors return it and an
+    #! unbound return type throws BindingError at call time rather than at build time
+    #! (this is exactly how gp_Mat silently breaks GProp_GProps::MatrixOfInertia).
+    - symbol: gp_Lin2d
+    - symbol: GccEnt_Position
+    - symbol: Geom2dGcc_QualifiedCurve
+    - symbol: Geom2dGcc_Circ2d2TanRad
+    - symbol: Geom2dGcc_Circ2d2TanOn
+    - symbol: Geom2dGcc_Circ2d3Tan
+    - symbol: Geom2dGcc_Circ2dTanCen
+    - symbol: Geom2dGcc_Circ2dTanOnRad
+    - symbol: Geom2dGcc_Lin2dTanObl
+    - symbol: Geom2dGcc_Lin2d2Tan
+
+    #! Top-level shape repair. Only the sub-fixers (Wire/Solid/Face/Edge) were bound.
+    - symbol: ShapeFix_Shape
+
+    #! Curve-on-surface projection. Never linked; consumers guard against its absence.
+    - symbol: BRepProj_Projection
+
+    #! STEP import carrying colors/names/assembly tree. The XCAF + XSControl stack is
+    #! already bound above for STEPCAFControl_Writer, so this adds one reader class
+    #! rather than a dependency tree.
+    - symbol: STEPCAFControl_Reader
+    - symbol: KernelCAD_XCAF
+
+    #! Mass-property accessors returning primitives only — deliberately NOT binding
+    #! gp_Mat or GProp_PrincipalProps, which would pull in types we never otherwise use.
+    - symbol: GPropWrapper
+
   buildFlags:
     - -flto
     - -fexceptions
@@ -303,6 +339,8 @@
     - -O3
 
   additionalCppCode: |2
+    #include <TDF_ChildIterator.hxx>
+
     class BRepToolsWrapper {
     public:
       static std::string Write(const TopoDS_Shape& shape) {
@@ -318,6 +356,67 @@
         Message_ProgressRange progress;
         BRepTools::Read(shape, iss, builder, progress);
         return shape;
+      }
+    };
+
+    class GPropWrapper {
+    public:
+      // Row-major element (i,j) of the 3x3 inertia matrix, 1-based per OCCT convention.
+      // Exposed element-wise so the binding surface stays primitive-only: gp_Mat is not
+      // registered with embind, so returning it directly throws at call time.
+      static Standard_Real MatrixOfInertiaValue(const GProp_GProps& props, const Standard_Integer i, const Standard_Integer j) {
+        return props.MatrixOfInertia().Value(i, j);
+      }
+      // Principal moment of inertia, index 0..2. Same primitive-only rationale as above:
+      // GProp_PrincipalProps is not bound.
+      static Standard_Real PrincipalMoment(const GProp_GProps& props, const Standard_Integer index) {
+        Standard_Real i1, i2, i3;
+        props.PrincipalProperties().Moments(i1, i2, i3);
+        return index == 0 ? i1 : (index == 1 ? i2 : i3);
+      }
+      // Component (0..2 = X/Y/Z) of principal axis `axis` (0..2).
+      static Standard_Real PrincipalAxisComponent(const GProp_GProps& props, const Standard_Integer axis, const Standard_Integer component) {
+        GProp_PrincipalProps p = props.PrincipalProperties();
+        const gp_Vec v = axis == 0 ? p.FirstAxisOfInertia() : (axis == 1 ? p.SecondAxisOfInertia() : p.ThirdAxisOfInertia());
+        return component == 0 ? v.X() : (component == 1 ? v.Y() : v.Z());
+      }
+      static Standard_Boolean HasSymmetryAxis(const GProp_GProps& props) {
+        return props.PrincipalProperties().HasSymmetryAxis();
+      }
+      static Standard_Boolean HasSymmetryPoint(const GProp_GProps& props) {
+        return props.PrincipalProperties().HasSymmetryPoint();
+      }
+    };
+
+    // Keep generic attribute handles and Standard_GUID private to C++. Exposing
+    // TDF_Label::FindAttribute directly would require registering its entire
+    // handle/GUID dependency tree, while consumers only need the copied name.
+    class KernelCAD_XCAF {
+    public:
+      static std::string GetName(const TDF_Label& label) {
+        Handle(TDF_Attribute) attribute;
+        if (!label.FindAttribute(TDataStd_Name::GetID(), attribute)) {
+          return std::string();
+        }
+        const Handle(TDataStd_Name) name = Handle(TDataStd_Name)::DownCast(attribute);
+        if (name.IsNull()) return std::string();
+        const TCollection_ExtendedString extended = name->Get();
+        const Standard_Integer length = extended.LengthOfCString();
+        std::string utf8(static_cast<std::string::size_type>(length) + 1, '\0');
+        Standard_PCharacter buffer = &utf8[0];
+        extended.ToUTF8CString(buffer);
+        utf8.resize(static_cast<std::string::size_type>(length));
+        return utf8;
+      }
+      static std::string GetChildTags(const TDF_Label& label) {
+        std::ostringstream tags;
+        bool first = true;
+        for (TDF_ChildIterator iterator(label, Standard_False); iterator.More(); iterator.Next()) {
+          if (!first) tags << ',';
+          tags << iterator.Value().Tag();
+          first = false;
+        }
+        return tags.str();
       }
     };
 
