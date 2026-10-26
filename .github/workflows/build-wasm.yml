@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24.x'
+          go-version: '1.26.4'
       - name: Install ytt
         run: go install github.com/carvel-dev/ytt/cmd/ytt@v0.55.4
       - name: Generate OCCT build configuration
