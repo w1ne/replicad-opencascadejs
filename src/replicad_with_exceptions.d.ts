@@ -8619,6 +8619,13 @@ export declare class OCJS {
   delete(): void;
 }
 
+export declare class KernelCAD_XCAF {
+  constructor();
+  static GetName(label: TDF_Label): string;
+  static GetChildTags(label: TDF_Label): string;
+  delete(): void;
+}
+
 export declare class GPropWrapper {
   constructor();
   static MatrixOfInertiaValue(props: GProp_GProps, i: Graphic3d_ZLayerId, j: Graphic3d_ZLayerId): Standard_Real;
@@ -9708,6 +9715,7 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   GeomConvert: typeof GeomConvert;
   GeomToolsWrapper: typeof GeomToolsWrapper;
   OCJS: typeof OCJS;
+  KernelCAD_XCAF: typeof KernelCAD_XCAF;
   GPropWrapper: typeof GPropWrapper;
   BRepToolsWrapper: typeof BRepToolsWrapper;
 };
