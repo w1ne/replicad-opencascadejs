@@ -393,13 +393,15 @@
     // handle/GUID dependency tree, while consumers only need the copied name.
     class KernelCAD_XCAF {
     public:
-      static TCollection_ExtendedString GetName(const TDF_Label& label) {
+      static std::string GetName(const TDF_Label& label) {
         Handle(TDF_Attribute) attribute;
         if (!label.FindAttribute(TDataStd_Name::GetID(), attribute)) {
-          return TCollection_ExtendedString();
+          return std::string();
         }
         const Handle(TDataStd_Name) name = Handle(TDataStd_Name)::DownCast(attribute);
-        return name.IsNull() ? TCollection_ExtendedString() : name->Get();
+        if (name.IsNull()) return std::string();
+        const TCollection_AsciiString utf8(name->Get());
+        return std::string(utf8.ToCString());
       }
       static std::string GetChildTags(const TDF_Label& label) {
         std::ostringstream tags;
