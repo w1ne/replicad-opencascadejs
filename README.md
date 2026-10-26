@@ -44,7 +44,7 @@ reported, not failed on — those are the intentional divergence listed below.
 | `ShapeFix_Shape` | top-level repair (only sub-fixers were bound) |
 | `BRepProj_Projection` | curve-on-surface projection |
 | `STEPCAFControl_Reader` | STEP import with colors/names/assembly tree |
-| `KernelCAD_XCAF` | Reads an XCAF label's copied product name without exposing generic GUID/attribute handles |
+| `KernelCAD_XCAF` | Reads copied XCAF product names and sparse child-label tags without exposing generic GUID/attribute handles |
 | `GPropWrapper` | inertia tensor + principal axes, see below |
 | `HLRBRep_PolyAlgo`, `Handle_HLRBRep_PolyAlgo`, `HLRBRep_PolyHLRToShape` | polygonal hidden-line removal for mesh-derived (STL) parts; exact HLR on 65k facets needs ~1.5 GB per drawing view |
 

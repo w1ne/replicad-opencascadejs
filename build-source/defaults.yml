@@ -339,6 +339,8 @@
     - -O3
 
   additionalCppCode: |2
+    #include <TDF_ChildIterator.hxx>
+
     class BRepToolsWrapper {
     public:
       static std::string Write(const TopoDS_Shape& shape) {
@@ -398,6 +400,16 @@
         }
         const Handle(TDataStd_Name) name = Handle(TDataStd_Name)::DownCast(attribute);
         return name.IsNull() ? TCollection_ExtendedString() : name->Get();
+      }
+      static std::string GetChildTags(const TDF_Label& label) {
+        std::ostringstream tags;
+        bool first = true;
+        for (TDF_ChildIterator iterator(label, Standard_False); iterator.More(); iterator.Next()) {
+          if (!first) tags << ',';
+          tags << iterator.Value().Tag();
+          first = false;
+        }
+        return tags.str();
       }
     };
 
