@@ -17,14 +17,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.4'
       - name: Install ytt
-        run: go install github.com/carvel-dev/ytt/cmd/ytt@v0.55.4
+        run: |
+          curl -fsSL https://github.com/carvel-dev/ytt/releases/download/v0.55.4/ytt-linux-amd64 -o "$RUNNER_TEMP/ytt"
+          echo '214138d930f5865d561b62f3acba79207afb02c1d87814eb2a2693ea8a33fb9d  '"$RUNNER_TEMP/ytt" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/ytt"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Generate OCCT build configuration
         run: |
-          export PATH="$(go env GOPATH)/bin:$PATH"
           ytt -f build-source --output-files build-config
           chmod 644 build-config/*.yml
       - name: Build single and exception-enabled bindings
