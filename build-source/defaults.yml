@@ -400,8 +400,13 @@
         }
         const Handle(TDataStd_Name) name = Handle(TDataStd_Name)::DownCast(attribute);
         if (name.IsNull()) return std::string();
-        const TCollection_AsciiString utf8(name->Get());
-        return std::string(utf8.ToCString());
+        const TCollection_ExtendedString extended = name->Get();
+        const Standard_Integer length = extended.LengthOfCString();
+        std::string utf8(static_cast<std::string::size_type>(length) + 1, '\0');
+        Standard_PCharacter buffer = &utf8[0];
+        extended.ToUTF8CString(buffer);
+        utf8.resize(static_cast<std::string::size_type>(length));
+        return utf8;
       }
       static std::string GetChildTags(const TDF_Label& label) {
         std::ostringstream tags;
