@@ -44,6 +44,7 @@ reported, not failed on — those are the intentional divergence listed below.
 | `ShapeFix_Shape` | top-level repair (only sub-fixers were bound) |
 | `BRepProj_Projection` | curve-on-surface projection |
 | `STEPCAFControl_Reader` | STEP import with colors/names/assembly tree |
+| `KernelCAD_XCAF` | Reads an XCAF label's copied product name without exposing generic GUID/attribute handles |
 | `GPropWrapper` | inertia tensor + principal axes, see below |
 | `HLRBRep_PolyAlgo`, `Handle_HLRBRep_PolyAlgo`, `HLRBRep_PolyHLRToShape` | polygonal hidden-line removal for mesh-derived (STL) parts; exact HLR on 65k facets needs ~1.5 GB per drawing view |
 
@@ -97,16 +98,26 @@ ytt -f build-source/ --output-files build-config
 chmod 644 build-config/*.yml   # ytt writes 0700; the -u mapped container user cannot read them
 
 cd build-config
-# note: no -it (fails without a TTY), and --platform linux/amd64 for Rosetta
+cp ../scripts/fix-destructors.py .
+OCCT_IMAGE='docker.io/donalffons/opencascade.js@sha256:3069f4c2e3ab62bb82d81843bad2c0f8552ee92373208f8f655ef9bf71c0524d'
+docker pull "$OCCT_IMAGE"
+# note: no -it (fails without a TTY); --platform linux/amd64 is needed on Rosetta
 docker run --rm --platform linux/amd64 -v "$(pwd)":/src -w /src \
-  -u "$(id -u)":"$(id -g)" donalffons/opencascade.js custom_build_single.yml
+  -u "$(id -u)":"$(id -g)" --entrypoint sh "$OCCT_IMAGE" \
+  -c 'python3 /src/fix-destructors.py custom_build_single.yml && /opencascade.js/src/buildFromYaml.py custom_build_single.yml'
 docker run --rm --platform linux/amd64 -v "$(pwd)":/src -w /src \
-  -u "$(id -u)":"$(id -g)" donalffons/opencascade.js custom_build_with_exceptions.yml
+  -u "$(id -u)":"$(id -g)" --entrypoint sh "$OCCT_IMAGE" \
+  -c 'python3 /src/fix-destructors.py custom_build_with_exceptions.yml && /opencascade.js/src/buildFromYaml.py custom_build_with_exceptions.yml'
 mv replicad_single* replicad_with_exceptions* ../src
 ```
 
 Build both variants together — shipping a `single` with new symbols next to a stale
 `with_exceptions` is silent drift.
+
+Pull requests that change the binding source build both variants and upload the
+generated modules as the `replicad-opencascadejs-wasm` workflow artifact. Copy the
+six generated files into `src/` and commit them with the source change after checking
+the artifact against the runtime API.
 
 The emitted module targets browser ESM. Loading it in node needs `__dirname`,
 `require`, and `locateFile` shimmed; that is a property of the build, not a defect.

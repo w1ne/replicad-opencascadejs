@@ -323,6 +323,7 @@
     #! already bound above for STEPCAFControl_Writer, so this adds one reader class
     #! rather than a dependency tree.
     - symbol: STEPCAFControl_Reader
+    - symbol: KernelCAD_XCAF
 
     #! Mass-property accessors returning primitives only — deliberately NOT binding
     #! gp_Mat or GProp_PrincipalProps, which would pull in types we never otherwise use.
@@ -382,6 +383,21 @@
       }
       static Standard_Boolean HasSymmetryPoint(const GProp_GProps& props) {
         return props.PrincipalProperties().HasSymmetryPoint();
+      }
+    };
+
+    // Keep generic attribute handles and Standard_GUID private to C++. Exposing
+    // TDF_Label::FindAttribute directly would require registering its entire
+    // handle/GUID dependency tree, while consumers only need the copied name.
+    class KernelCAD_XCAF {
+    public:
+      static TCollection_ExtendedString GetName(const TDF_Label& label) {
+        Handle(TDF_Attribute) attribute;
+        if (!label.FindAttribute(TDataStd_Name::GetID(), attribute)) {
+          return TCollection_ExtendedString();
+        }
+        const Handle(TDataStd_Name) name = Handle(TDataStd_Name)::DownCast(attribute);
+        return name.IsNull() ? TCollection_ExtendedString() : name->Get();
       }
     };
 
