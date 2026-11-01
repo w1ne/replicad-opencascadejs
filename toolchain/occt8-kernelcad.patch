@@ -1,0 +1,286 @@
+diff --git a/src/ModelingAlgorithms/TKBO/BRepAlgoAPI/BRepAlgoAPI_Algo.hxx b/src/ModelingAlgorithms/TKBO/BRepAlgoAPI/BRepAlgoAPI_Algo.hxx
+index 4a5b4382..10f516e1 100644
+--- a/src/ModelingAlgorithms/TKBO/BRepAlgoAPI/BRepAlgoAPI_Algo.hxx
++++ b/src/ModelingAlgorithms/TKBO/BRepAlgoAPI/BRepAlgoAPI_Algo.hxx
+@@ -38,20 +38,22 @@ public:
+ 
+   // Provide access to methods of protected base class BOPAlgo_Options
+   // (inherited as protected to avoid problems with SWIG wrapper)
+-  using BOPAlgo_Options::Clear;
+-  using BOPAlgo_Options::ClearWarnings;
+-  using BOPAlgo_Options::DumpErrors;
+-  using BOPAlgo_Options::DumpWarnings;
+-  using BOPAlgo_Options::FuzzyValue;
+-  using BOPAlgo_Options::GetReport;
+-  using BOPAlgo_Options::HasError;
+-  using BOPAlgo_Options::HasErrors;
+-  using BOPAlgo_Options::HasWarning;
+-  using BOPAlgo_Options::HasWarnings;
+-  using BOPAlgo_Options::RunParallel;
+-  using BOPAlgo_Options::SetFuzzyValue;
+-  using BOPAlgo_Options::SetRunParallel;
+-  using BOPAlgo_Options::SetUseOBB;
++  // kernelCAD/opencascade.js: the embind generator does not see using-declarations,
++  // so forward explicitly (same patch opencascade.js applied to OCCT 7.6).
++  void Clear() override { BOPAlgo_Options::Clear(); }
++  void ClearWarnings() { BOPAlgo_Options::ClearWarnings(); }
++  void DumpErrors(Standard_OStream& theOS) const { BOPAlgo_Options::DumpErrors(theOS); }
++  void DumpWarnings(Standard_OStream& theOS) const { BOPAlgo_Options::DumpWarnings(theOS); }
++  double FuzzyValue() const { return BOPAlgo_Options::FuzzyValue(); }
++  const occ::handle<Message_Report>& GetReport() const { return BOPAlgo_Options::GetReport(); }
++  bool HasError(const occ::handle<Standard_Type>& theType) const { return BOPAlgo_Options::HasError(theType); }
++  bool HasErrors() const { return BOPAlgo_Options::HasErrors(); }
++  bool HasWarning(const occ::handle<Standard_Type>& theType) const { return BOPAlgo_Options::HasWarning(theType); }
++  bool HasWarnings() const { return BOPAlgo_Options::HasWarnings(); }
++  bool RunParallel() const { return BOPAlgo_Options::RunParallel(); }
++  void SetFuzzyValue(const double theFuzz) { BOPAlgo_Options::SetFuzzyValue(theFuzz); }
++  void SetRunParallel(const bool theFlag) { BOPAlgo_Options::SetRunParallel(theFlag); }
++  void SetUseOBB(const bool theUseOBB) { BOPAlgo_Options::SetUseOBB(theUseOBB); }
+ 
+ protected:
+   //! Empty constructor
+diff --git a/src/ModelingData/TKBRep/TopoDS/TopoDS.hxx b/src/ModelingData/TKBRep/TopoDS/TopoDS.hxx
+index 4342548d..87ef4569 100644
+--- a/src/ModelingData/TKBRep/TopoDS/TopoDS.hxx
++++ b/src/ModelingData/TKBRep/TopoDS/TopoDS.hxx
+@@ -61,13 +61,19 @@ class TopoDS_Iterator;
+ //! TopoDS_Shape aShape = ...; // aShape->ShapeType() == TopAbs_VERTEX
+ //! const TopoDS_Face& face = TopoDS::Edge(aShape);
+ //! @endcode
+-namespace TopoDS
++// kernelCAD compatibility: OCCT 8 turned TopoDS into a namespace; embind can only
++// bind classes, and replicad/kernelCAD call TopoDS.Edge_1(...) etc. Keep it a
++// class of static casts as in OCCT 7.x (call sites are source-compatible).
++class TopoDS
+ {
++public:
++  DEFINE_STANDARD_ALLOC
++
+ //! Casts shape theShape to the more specialized return type, Vertex.
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Vertex
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_Vertex& Vertex(const TopoDS_Shape& theShape)
++static const TopoDS_Vertex& Vertex(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_VERTEX,
+                                  "TopoDS::Vertex");
+@@ -78,7 +84,7 @@ inline const TopoDS_Vertex& Vertex(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Vertex
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_Vertex& Vertex(TopoDS_Shape& theShape)
++static TopoDS_Vertex& Vertex(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_VERTEX,
+                                  "TopoDS::Vertex");
+@@ -89,7 +95,7 @@ inline TopoDS_Vertex& Vertex(TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Edge
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_Edge& Edge(const TopoDS_Shape& theShape)
++static const TopoDS_Edge& Edge(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_EDGE,
+                                  "TopoDS::Edge");
+@@ -100,7 +106,7 @@ inline const TopoDS_Edge& Edge(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Edge
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_Edge& Edge(TopoDS_Shape& theShape)
++static TopoDS_Edge& Edge(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_EDGE,
+                                  "TopoDS::Edge");
+@@ -111,7 +117,7 @@ inline TopoDS_Edge& Edge(TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Wire
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_Wire& Wire(const TopoDS_Shape& theShape)
++static const TopoDS_Wire& Wire(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_WIRE,
+                                  "TopoDS::Wire");
+@@ -122,7 +128,7 @@ inline const TopoDS_Wire& Wire(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Wire
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_Wire& Wire(TopoDS_Shape& theShape)
++static TopoDS_Wire& Wire(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_WIRE,
+                                  "TopoDS::Wire");
+@@ -133,7 +139,7 @@ inline TopoDS_Wire& Wire(TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Face
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_Face& Face(const TopoDS_Shape& theShape)
++static const TopoDS_Face& Face(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_FACE,
+                                  "TopoDS::Face");
+@@ -144,7 +150,7 @@ inline const TopoDS_Face& Face(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Face
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_Face& Face(TopoDS_Shape& theShape)
++static TopoDS_Face& Face(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_FACE,
+                                  "TopoDS::Face");
+@@ -155,7 +161,7 @@ inline TopoDS_Face& Face(TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Shell
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_Shell& Shell(const TopoDS_Shape& theShape)
++static const TopoDS_Shell& Shell(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_SHELL,
+                                  "TopoDS::Shell");
+@@ -166,7 +172,7 @@ inline const TopoDS_Shell& Shell(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Shell
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_Shell& Shell(TopoDS_Shape& theShape)
++static TopoDS_Shell& Shell(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_SHELL,
+                                  "TopoDS::Shell");
+@@ -177,7 +183,7 @@ inline TopoDS_Shell& Shell(TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Solid
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_Solid& Solid(const TopoDS_Shape& theShape)
++static const TopoDS_Solid& Solid(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_SOLID,
+                                  "TopoDS::Solid");
+@@ -188,7 +194,7 @@ inline const TopoDS_Solid& Solid(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Solid
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_Solid& Solid(TopoDS_Shape& theShape)
++static TopoDS_Solid& Solid(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false : theShape.ShapeType() != TopAbs_SOLID,
+                                  "TopoDS::Solid");
+@@ -199,7 +205,7 @@ inline TopoDS_Solid& Solid(TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_CompSolid
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_CompSolid& CompSolid(const TopoDS_Shape& theShape)
++static const TopoDS_CompSolid& CompSolid(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false
+                                                    : theShape.ShapeType() != TopAbs_COMPSOLID,
+@@ -211,7 +217,7 @@ inline const TopoDS_CompSolid& CompSolid(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_CompSolid
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_CompSolid& CompSolid(TopoDS_Shape& theShape)
++static TopoDS_CompSolid& CompSolid(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false
+                                                    : theShape.ShapeType() != TopAbs_COMPSOLID,
+@@ -223,7 +229,7 @@ inline TopoDS_CompSolid& CompSolid(TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Compound
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline const TopoDS_Compound& Compound(const TopoDS_Shape& theShape)
++static const TopoDS_Compound& Compound(const TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false
+                                                    : theShape.ShapeType() != TopAbs_COMPOUND,
+@@ -235,13 +241,13 @@ inline const TopoDS_Compound& Compound(const TopoDS_Shape& theShape)
+ //! @param theShape the shape to be cast
+ //! @return the casted shape as TopoDS_Compound
+ //! @throws Standard_TypeMismatch if theShape cannot be cast to this return type.
+-inline TopoDS_Compound& Compound(TopoDS_Shape& theShape)
++static TopoDS_Compound& Compound(TopoDS_Shape& theShape)
+ {
+   Standard_TypeMismatch_Raise_if(theShape.IsNull() ? false
+                                                    : theShape.ShapeType() != TopAbs_COMPOUND,
+                                  "TopoDS::Compound");
+   return *(TopoDS_Compound*)&theShape;
+ }
+-} // namespace TopoDS
++}; // class TopoDS
+ 
+ #endif // _TopoDS_HeaderFile
+diff --git a/src/ModelingData/TKBRep/TopoDS/TopoDS_Shape.hxx b/src/ModelingData/TKBRep/TopoDS/TopoDS_Shape.hxx
+index b9f5da9b..dcf8415e 100644
+--- a/src/ModelingData/TKBRep/TopoDS/TopoDS_Shape.hxx
++++ b/src/ModelingData/TKBRep/TopoDS/TopoDS_Shape.hxx
+@@ -306,6 +306,11 @@ public:
+   //! Dumps the content of me into the stream
+   Standard_EXPORT void DumpJson(Standard_OStream& theOStream, int theDepth = -1) const;
+ 
++  //! kernelCAD compatibility (removed in OCCT 8): hash code of the TShape and
++  //! Location (orientation ignored, like IsSame) in the range [1, theUpperBound].
++  //! Same value as std::hash<TopoDS_Shape> modulo theUpperBound, plus one.
++  int HashCode(const int theUpperBound) const;
++
+ protected:
+   //! Checks if the transformation contains scaling or negative values.
+   //! Raises an exception if the transformation is invalid.
+@@ -341,4 +346,14 @@ struct hash<TopoDS_Shape>
+ };
+ } // namespace std
+ 
++inline int TopoDS_Shape::HashCode(const int theUpperBound) const
++{
++  if (theUpperBound < 1)
++  {
++    return 0;
++  }
++  return static_cast<int>(std::hash<TopoDS_Shape>{}(*this) % static_cast<size_t>(theUpperBound))
++         + 1;
++}
++
+ #endif // _TopoDS_Shape_HeaderFile
+diff --git a/src/Visualization/TKV3d/StdPrs/StdPrs_ToolTriangulatedShape.hxx b/src/Visualization/TKV3d/StdPrs/StdPrs_ToolTriangulatedShape.hxx
+index 1f19a6ca..161a62d5 100644
+--- a/src/Visualization/TKV3d/StdPrs/StdPrs_ToolTriangulatedShape.hxx
++++ b/src/Visualization/TKV3d/StdPrs/StdPrs_ToolTriangulatedShape.hxx
+@@ -17,6 +17,9 @@
+ #include <BRepLib_ToolTriangulatedShape.hxx>
+ #include <gp_Dir.hxx>
+ #include <NCollection_Array1.hxx>
++#include <Poly_Connect.hxx>
++#include <Poly_Triangulation.hxx>
++#include <TopoDS_Face.hxx>
+ 
+ class TopoDS_Shape;
+ class Prs3d_Drawer;
+@@ -71,6 +74,31 @@ public:
+   Standard_EXPORT static void ClearOnOwnDeflectionChange(const TopoDS_Shape&              theShape,
+                                                          const occ::handle<Prs3d_Drawer>& theDrawer,
+                                                          const bool theToResetCoeff);
++
++  //! kernelCAD compatibility (removed in OCCT 8): evaluates the nodal normals of
++  //! the face triangulation into theNormals (computing them first if the
++  //! triangulation has none), reversed for a reversed face. Same as OCCT 7.6.
++  static void Normal(const TopoDS_Face&      theFace,
++                     Poly_Connect&           thePolyConnect,
++                     NCollection_Array1<gp_Dir>& theNormals)
++  {
++    const occ::handle<Poly_Triangulation>& aPolyTri = thePolyConnect.Triangulation();
++    if (!aPolyTri->HasNormals())
++    {
++      ComputeNormals(theFace, aPolyTri, thePolyConnect);
++    }
++    for (int aNodeIter = 1; aNodeIter <= aPolyTri->NbNodes(); ++aNodeIter)
++    {
++      theNormals.ChangeValue(aNodeIter) = aPolyTri->Normal(aNodeIter);
++    }
++    if (theFace.Orientation() == TopAbs_REVERSED)
++    {
++      for (int aNodeIter = 1; aNodeIter <= aPolyTri->NbNodes(); ++aNodeIter)
++      {
++        theNormals.ChangeValue(aNodeIter).Reverse();
++      }
++    }
++  }
+ };
+ 
+ #endif

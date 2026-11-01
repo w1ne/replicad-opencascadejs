@@ -138,6 +138,8 @@
 
     - symbol: Poly_Connect
     - symbol: StdPrs_ToolTriangulatedShape
+    #! OCCT 8 home of ComputeNormals (StdPrs_ToolTriangulatedShape re-exposes them, see README)
+    - symbol: BRepLib_ToolTriangulatedShape
     - symbol: Poly_Triangle
     - symbol: Poly_Triangulation
     - symbol: Handle_Poly_Triangulation
@@ -160,6 +162,10 @@
 
     - symbol: BRepAdaptor_Surface
     - symbol: BRepAdaptor_Curve
+    #! OCCT 8 moved most BRepAdaptor_Curve/Surface methods into these new bases;
+    #! embind cannot register a class whose base is unbound.
+    - symbol: GeomAdaptor_TransformedCurve
+    - symbol: GeomAdaptor_TransformedSurface
     - symbol: Adaptor3d_Curve
     - symbol: Adaptor3d_Surface
     - symbol: BRepAdaptor_CompCurve
@@ -329,6 +335,10 @@
     #! gp_Mat or GProp_PrincipalProps, which would pull in types we never otherwise use.
     - symbol: GPropWrapper
 
+    #! OCCT version the module was built from ("8.0.1"), for diagnostics and
+    #! for checking a build without parsing STEP headers.
+    - symbol: KernelCAD_OCCT
+
   buildFlags:
     - -flto
     - -fexceptions
@@ -340,6 +350,7 @@
 
   additionalCppCode: |2
     #include <TDF_ChildIterator.hxx>
+    #include <Standard_Version.hxx>
 
     class BRepToolsWrapper {
     public:
@@ -418,6 +429,11 @@
         }
         return tags.str();
       }
+    };
+
+    class KernelCAD_OCCT {
+    public:
+      static std::string Version() { return OCC_VERSION_COMPLETE; }
     };
 
     class GeomToolsWrapper {
