@@ -71,7 +71,16 @@ def binding_sources(symbols):
                 yield os.path.join(dirpath, name)
 
 
+# Never destroyed from JavaScript. Since OCCT 8, Standard_Failure derives from
+# std::exception instead of Standard_Transient; the with_exceptions build hands
+# JS raw pointers to in-flight exception objects (OCJS.getStandard_FailureData),
+# which the C++ runtime owns.
+KEEP_NOOP = {"Standard_Failure"}
+
+
 def patch(path):
+    if os.path.basename(path)[:-4] in KEEP_NOOP:
+        return False
     with open(path) as f:
         src = f.read()
     if not NOOP.search(src):

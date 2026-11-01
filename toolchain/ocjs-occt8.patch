@@ -1,0 +1,706 @@
+diff -ruN -x __pycache__ -x compat -x compat76.py -x prepareBindings.py -x compileSources8.py ./Common.py ../../ocjs-src/Common.py
+--- a/Common.py
++++ b/Common.py
+@@ -4,24 +4,56 @@
+ 
+ occtBasePath = "/occt/src/"
+ 
++# kernelCAD OCCT 8 port: OCCT 8 lays sources out as src/<Module>/<Toolkit>/<Package>.
++# Parse/compile only the modules the library is built from, never the Draw test
++# harness, the GTests trees, or toolkits needing OpenGL/VTK/Direct3D.
++MODULES = ["FoundationClasses", "ModelingData", "ModelingAlgorithms", "Visualization",
++           "ApplicationFramework", "DataExchange", "Deprecated", "zzKernelCAD"]
++SKIP_DIRS = {"GTests", "TKOpenGl", "TKOpenGles", "TKD3DHost", "TKIVtk", "TKMeshVS"}
++
+ def getGlobalIncludes() -> Set[str]:
+   includeFiles = list()
+   additionalIncludePaths = list()
+-  for dirpath, dirnames, filenames in os.walk(occtBasePath):
+-    additionalIncludePaths.append(str(dirpath))
+-    for item in filenames:
+-      if filterIncludeFile(item):
+-        includeFiles.append(str(os.path.join(dirpath, item)))
++  for module in MODULES:
++    for dirpath, dirnames, filenames in os.walk(os.path.join(occtBasePath, module)):
++      dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
++      if any(f.endswith((".hxx", ".lxx", ".gxx", ".pxx", ".h")) for f in filenames):
++        additionalIncludePaths.append(str(dirpath))
++      for item in filenames:
++        if filterIncludeFile(item):
++          includeFiles.append(str(os.path.join(dirpath, item)))
+   return [includeFiles, additionalIncludePaths]
+ 
+ [ocIncludeFiles, ocIncludePaths] = getGlobalIncludes()
+ 
++def _dropDanglingAliases(files):
++  # OCCT 8's Deprecated/NCollectionAliases contains a few aliases that include
++  # headers which no longer exist (or live in Draw); one missing include is a
++  # fatal error that ends the whole parse, so skip those aliases.
++  import re
++  available = set(os.path.basename(f) for f in files)
++  for p in ocIncludePaths:
++    available.update(os.listdir(p))
++  keep = []
++  for f in files:
++    if "/Deprecated/" in f:
++      incs = re.findall(r'#include\s*<([^>]+)>', open(f, errors="replace").read())
++      if any(i not in available and not i.startswith(("std", "c")) and i.endswith(".hxx") for i in incs):
++        continue
++    keep.append(f)
++  return keep
++
++ocIncludeFiles = _dropDanglingAliases(ocIncludeFiles)
++
+ additionalIncludePaths = [
+   "/rapidjson/include",
+   "/freetype/include/freetype",
+   "/freetype/include",
+ ]
+ 
++# Flags shared by every libclang parse and emcc compile of binding code.
++cxxStdFlags = ["-std=c++17", "-DOCCT_NO_DEPRECATED", "-Wno-deprecated-declarations"]
++
+ includePathArgs = \
+   list(dict.fromkeys(map(lambda x: "-I" + x, ocIncludePaths))) + \
+   list(map(lambda x: "-I" + x, [
+@@ -32,4 +64,3 @@
+     "/emsdk/upstream/emscripten/system/lib/libcxx/include/__support/newlib/"
+   ])) + \
+   list(map(lambda x: "-I" + x, ocIncludePaths + additionalIncludePaths))
+-  
+\ No newline at end of file
+diff -ruN -x __pycache__ -x compat -x compat76.py -x prepareBindings.py -x compileSources8.py ./bindings.py ../../ocjs-src/bindings.py
+--- a/bindings.py
++++ b/bindings.py
+@@ -2,6 +2,20 @@
+ import re
+ 
+ from wasmGenerator.Common import SkipException, isAbstractClass, getMethodOverloadPostfix
++import compat76
++
++def compatMethodPostfix(theClass, method, templateDecl):
++  [postfix, numOverloads] = getMethodOverloadPostfix(theClass, method)
++  c = compat76.methodPostfix(theClass, method, templateDecl)
++  if c is NotImplemented:
++    return [postfix, numOverloads]
++  return [c, numOverloads]
++
++def normalizeSpelling(s):
++  # OCCT 8 spells handles through the occ:: alias template; typedef lookup
++  # compares spellings, so fold it back to opencascade::handle.
++  return s.replace("occ::handle<", "opencascade::handle<")
++
+ from filter.filterClasses import filterClass
+ from filter.filterMethodOrProperties import filterMethodOrProperty
+ from Common import occtBasePath
+@@ -87,6 +101,7 @@
+     self.typedefs = typedefs
+ 
+   def getTypedefedTemplateTypeAsString(self, theTypeSpelling, templateDecl = None, templateArgs = None):
++    theTypeSpelling = normalizeSpelling(theTypeSpelling)
+     if templateDecl is None:
+       typedefType = next((x for x in self.typedefs if x.location.file.name.startswith(occtBasePath) and x.underlying_typedef_type.spelling == theTypeSpelling), None)
+       typedefType = None if typedefType is None else typedefType.spelling
+@@ -110,8 +125,15 @@
+   def processClass(self, theClass, templateDecl = None, templateArgs = None):
+     output = ""
+     isAbstract = isAbstractClass(theClass, self.translationUnit)
++    plan = compat76.ctorPlan(theClass, templateDecl)
+     if not isAbstract:
+-      output += self.processSimpleConstructor(theClass)
++      if plan is NotImplemented:
++        output += self.processSimpleConstructor(theClass)
++      elif plan[0] == "simple":
++        if plan[1] is not None:
++          output += self.processGivenConstructor(theClass, plan[1], templateDecl, templateArgs)
++        elif not any(x.kind == clang.cindex.CursorKind.CONSTRUCTOR for x in theClass.get_children()):
++          output += self.processSimpleConstructor(theClass)
+     for method in theClass.get_children():
+       if not filterMethodOrProperty(theClass, method):
+         continue
+@@ -119,10 +141,15 @@
+         output += self.processMethodOrProperty(theClass, method, templateDecl, templateArgs)
+       except SkipException as e:
+         print(str(e))
++    for (method, postfix, numOverloads) in compat76.inheritedStatics(theClass, templateDecl):
++      try:
++        output += self.processMethodOrProperty(method.semantic_parent, method, None, None, (postfix, numOverloads))
++      except SkipException as e:
++        print(str(e))
+     output += self.processFinalizeClass()
+-    if not isAbstract:
++    if not isAbstract and (plan is NotImplemented or plan[0] == "overloaded"):
+       try:
+-        output += self.processOverloadedConstructors(theClass, None, templateDecl, templateArgs)
++        output += self.processOverloadedConstructors(theClass, None, templateDecl, templateArgs, None if plan is NotImplemented else plan[1])
+       except SkipException as e:
+         print(str(e))
+     return output
+@@ -143,9 +170,12 @@
+ 
+     baseSpec = list(filter(lambda x: x.kind == clang.cindex.CursorKind.CXX_BASE_SPECIFIER and x.access_specifier == clang.cindex.AccessSpecifier.PUBLIC, theClass.get_children()))
+ 
+-    if len(baseSpec) > 0:
+-      baseClassBinding = ", base<" + baseSpec[0].type.spelling + ">"
++    if len(baseSpec) > 0 and not baseSpec[0].type.spelling.startswith("std::") and not compat76.hadNoBase(className):
++      # OCCT 8: NCollection_Array2<T> derives from NCollection_Array1<T>
++      baseClassBinding = ", base<" + self.replaceTemplateArgs(baseSpec[0].type.spelling, templateArgs) + ">"
+     else:
++      # OCCT 8: Standard_Failure derives from std::exception, which embind
++      # does not know; a base<> it cannot resolve leaves the class unregistered.
+       baseClassBinding = ""
+ 
+     output += "EMSCRIPTEN_BINDINGS(" + (theClass.spelling if templateDecl is None else templateDecl.spelling) + ") {\n"
+@@ -159,7 +189,8 @@
+     nonPublicDestructor = any(x.kind == clang.cindex.CursorKind.DESTRUCTOR and not x.access_specifier == clang.cindex.AccessSpecifier.PUBLIC for x in theClass.get_children())
+     placementDelete = next((x for x in theClass.get_children() if x.spelling == "operator delete" and len(list(x.get_arguments())) == 2), None) is not None
+     if nonPublicDestructor or placementDelete:
+-      output += "namespace emscripten { namespace internal { template<> void raw_destructor<" + theClass.spelling + ">(" + theClass.spelling + "* ptr) { /* do nothing */ } } }\n"
++      destructed = theClass.spelling if templateDecl is None or templateArgs is None or len(templateArgs) == 0 else className
++      output += "namespace emscripten { namespace internal { template<> void raw_destructor<" + destructed + ">(" + destructed + "* ptr) { /* do nothing */ } } }\n"
+     return output
+ 
+   def processFinalizeClass(self):
+@@ -203,7 +234,7 @@
+           tokenList = list(arg.get_tokens())
+           isConstRef = len(tokenList) > 0 and tokenList[0].spelling == "const"
+           if not isConstRef:
+-            if typename[-2] == "*" or "".join(typename.rsplit("&", 1)).strip() in ["Standard_Boolean", "Standard_Real", "Standard_Integer"]: # types that can be copied
++            if typename[-2] == "*" or "".join(typename.rsplit("&", 1)).strip() in ["Standard_Boolean", "Standard_Real", "Standard_Integer", "bool", "double", "int"]: # types that can be copied
+               typename = "".join(typename.rsplit("&", 1))
+               changed = True
+             else:
+@@ -217,13 +248,16 @@
+       return [argBinding, changed]
+     return f
+ 
+-  def processMethodOrProperty(self, theClass, method, templateDecl = None, templateArgs = None):
++  def processMethodOrProperty(self, theClass, method, templateDecl = None, templateArgs = None, forced = None):
+     output = ""
+     className = getClassTypeName(theClass, templateDecl)
+     if className == "":
+       className = theClass.type.spelling
+     if method.access_specifier == clang.cindex.AccessSpecifier.PUBLIC and method.kind == clang.cindex.CursorKind.CXX_METHOD and not method.spelling.startswith("operator"):
+-      [overloadPostfix, numOverloads] = getMethodOverloadPostfix(theClass, method)
++      [overloadPostfix, numOverloads] = forced if forced is not None else compatMethodPostfix(theClass, method, templateDecl)
++      if overloadPostfix is None:
++        return ""
++      isStaticBinding = method.is_static_method() and not compat76.bindAsInstance(method)
+ 
+       def needsWrapper(type):
+         return (
+@@ -241,10 +275,10 @@
+           )
+         )
+ 
+-      args = list(method.get_arguments())
++      args = list(compat76.args(method))
+       argsNeedingWrapper = list(map(lambda arg: needsWrapper(arg.type), args))
+       returnNeedsWrapper = needsWrapper(method.result_type)
+-      if any(argsNeedingWrapper) or returnNeedsWrapper:
++      if any(argsNeedingWrapper) or returnNeedsWrapper or compat76.isTruncated(method) or compat76.bindAsInstance(method):
+         def replaceTemplateArgs(x):
+           if templateArgs is not None and args[x[0]].type.get_pointee().spelling.replace("const ", "") in templateArgs:
+             return args[x[0]].type.spelling.replace(args[x[0]].type.get_pointee().spelling.replace("const ", ""), templateArgs[args[x[0]].type.get_pointee().spelling.replace("const ", "")].spelling)
+@@ -313,19 +347,19 @@
+           merge("",
+             "\n",
+             indent(3),
+-            pickWrap(not method.is_static_method(),
++            pickWrap(not isStaticBinding,
+               [f"std::function<{resultTypeSpelling}(", f"(({resultTypeSpelling} (*)("],
+               merge("",
+-                pick(not method.is_static_method(), f"{classTypeName}&", ""),
+-                pick(not method.is_static_method() and len(args) > 0, ", ", ""),
++                pick(not isStaticBinding, f"{classTypeName}&", ""),
++                pick(not isStaticBinding and len(args) > 0, ", ", ""),
+                 wrappedParamTypes,
+               ),
+               [")>(", "))"]
+             ),
+             merge("",
+               "[](",
+-              pick(not method.is_static_method(), f"{classTypeName}& that", ""),
+-              pick(not method.is_static_method() and len(args) > 0, ", ", ""),
++              pick(not isStaticBinding, f"{classTypeName}& that", ""),
++              pick(not isStaticBinding and len(args) > 0, ", ", ""),
+               wrappedParamTypesAndNames,
+               ")",
+             ),
+@@ -384,13 +418,13 @@
+           functionBinding = merge("",
+             " select_overload<",
+             self.getTypedefedTemplateTypeAsString(method.result_type.spelling, templateDecl, templateArgs),
+-            f'({merge(", ", *map(lambda x: self.getSingleArgumentBinding(True, True, templateDecl, templateArgs)(x)[0], list(method.get_arguments())))})',
++            f'({merge(", ", *map(lambda x: self.getSingleArgumentBinding(True, True, templateDecl, templateArgs)(x)[0], list(compat76.args(method))))})',
+             pick(method.is_const_method(), "const", ""),
+             pick(not method.is_static_method(), f", {getClassTypeName(theClass, templateDecl)}", ""),
+             f">(&{className}::{method.spelling})",
+           )
+ 
+-      if method.is_static_method():
++      if isStaticBinding:
+         functionCommand = "class_function"
+       else:
+         functionCommand = "function"
+@@ -405,23 +439,35 @@
+         output += f"{indent(2)}.property(\"{method.spelling}\", &{className}::{method.spelling})\n"
+     return output
+ 
+-  def processOverloadedConstructors(self, theClass, children = None, templateDecl = None, templateArgs = None):
++  def processGivenConstructor(self, theClass, constructor, templateDecl = None, templateArgs = None):
++    argTypesBindings = ", ".join(list(map(lambda x: "std::string" if isCString(x.type) else self.getSingleArgumentBinding(False, True, templateDecl, templateArgs)(x)[0], list(compat76.args(constructor)))))
++    if any(isCString(x.type) for x in compat76.args(constructor)):
++      compat76._report("SKIPPED-CSTRING-CTOR " + theClass.spelling)
++      return ""
++    return "    .constructor<" + argTypesBindings + ">()\n"
++
++  def processOverloadedConstructors(self, theClass, children = None, templateDecl = None, templateArgs = None, postfixMap = None):
+     output = ""
+     if children is None:
+       children = list(theClass.get_children())
+     constructors = list(filter(lambda x: x.kind == clang.cindex.CursorKind.CONSTRUCTOR and x.access_specifier == clang.cindex.AccessSpecifier.PUBLIC, children))
+-    if len(constructors) == 1:
++    if len(constructors) == 1 and postfixMap is None:
+       return output
+     constructorBindings = ""
+     allOverloads = [m for m in children if m.kind == clang.cindex.CursorKind.CONSTRUCTOR and m.access_specifier == clang.cindex.AccessSpecifier.PUBLIC]
+-    if len(allOverloads) == 1:
++    if len(allOverloads) == 1 and postfixMap is None:
+       raise Exception("Something weird happened")
+     for constructor in filter(lambda x: filterMethodOrProperty(theClass, x), constructors):
+-      overloadPostfix = "" if (not len(allOverloads) > 1) else "_" + str(allOverloads.index(constructor) + 1)
++      if postfixMap is not None:
++        if compat76.key(constructor) not in postfixMap:
++          continue
++        overloadPostfix = postfixMap[compat76.key(constructor)]
++      else:
++        overloadPostfix = "" if (not len(allOverloads) > 1) else "_" + str(allOverloads.index(constructor) + 1)
+ 
+-      args = ", ".join(list(map(lambda x: ("std::string " + x.spelling) if isCString(x.type) else self.getSingleArgumentBinding(True, True, templateDecl, templateArgs)(x)[0], constructor.get_arguments())))
+-      argNames = ", ".join(list(map(lambda x: (x.spelling + ".c_str()") if isCString(x.type) else x.spelling, constructor.get_arguments())))
+-      argTypes = ", ".join(list(map(lambda x: "std::string" if isCString(x.type) else self.getSingleArgumentBinding(False, True, templateDecl, templateArgs)(x)[0], constructor.get_arguments())))
++      args = ", ".join(list(map(lambda x: ("std::string " + x.spelling) if isCString(x.type) else self.getSingleArgumentBinding(True, True, templateDecl, templateArgs)(x)[0], compat76.args(constructor))))
++      argNames = ", ".join(list(map(lambda x: (x.spelling + ".c_str()") if isCString(x.type) else x.spelling, compat76.args(constructor))))
++      argTypes = ", ".join(list(map(lambda x: "std::string" if isCString(x.type) else self.getSingleArgumentBinding(False, True, templateDecl, templateArgs)(x)[0], compat76.args(constructor))))
+ 
+       name = getClassTypeName(theClass, templateDecl)
+       constructorBindings += "    struct " + name + overloadPostfix + " : public " + name + " {\n"
+@@ -463,11 +509,20 @@
+     output = ""
+     baseSpec = list(filter(lambda x: x.kind == clang.cindex.CursorKind.CXX_BASE_SPECIFIER and x.access_specifier == clang.cindex.AccessSpecifier.PUBLIC, theClass.get_children()))
+     baseClassDefinition = ""
+-    if len(baseSpec) > 0:
++    if compat76.hadNoBase(getClassTypeName(theClass, templateDecl)):
++      pass
++    elif len(baseSpec) > 0 and templateArgs:
++      baseSpelling = self.replaceTemplateArgs(baseSpec[0].type.spelling, templateArgs)
++      typedefName = next((x.spelling for x in self.templateTypedefs if x.underlying_typedef_type.spelling == baseSpelling), None)
++      if typedefName is not None:
++        baseClassDefinition = " extends " + typedefName
++      elif not any(x in baseSpelling for x in [":", "<"]):
++        baseClassDefinition = " extends " + baseSpelling
++    elif len(baseSpec) > 0:
+       if any(x in baseSpec[0].type.spelling for x in [":", "<"]):
+         print("Unsupported character for base class \"" + baseSpec[0].type.spelling + "\" (" + theClass.spelling + ")")
+       else:
+-        baseClassDefinition = " extends " + baseSpec[0].type.spelling
++        baseClassDefinition = " extends " + compat76.tsBaseName(getClassTypeName(theClass, templateDecl), baseSpec[0].type.spelling)
+         # self.addImportIfWeHaveTo(baseSpec[0].type.spelling)
+ 
+     name = getClassTypeName(theClass, templateDecl)
+@@ -562,32 +617,43 @@
+       argname += "_"
+     return argname + ": " + argTypeName
+ 
+-  def processMethodOrProperty(self, theClass, method, templateDecl = None, templateArgs = None):
++  def processMethodOrProperty(self, theClass, method, templateDecl = None, templateArgs = None, forced = None):
+     output = ""
+     if method.access_specifier == clang.cindex.AccessSpecifier.PUBLIC and method.kind == clang.cindex.CursorKind.CXX_METHOD and not method.spelling.startswith("operator"):
+-      [overloadPostfix, numOverloads] = getMethodOverloadPostfix(theClass, method)
++      [overloadPostfix, numOverloads] = forced if forced is not None else compatMethodPostfix(theClass, method, templateDecl)
++      if overloadPostfix is None:
++        return ""
+ 
+-      args = ", ".join(list(map(lambda x: self.getTypescriptDefFromArg(x[1], x[0], templateDecl, templateArgs), enumerate(method.get_arguments()))))
++      args = ", ".join(list(map(lambda x: self.getTypescriptDefFromArg(x[1], x[0], templateDecl, templateArgs), enumerate(compat76.args(method)))))
+       returnType = self.getTypescriptDefFromResultType(method.result_type, templateDecl, templateArgs)
+ 
+-      output += "  " + ("static " if method.is_static_method() else "") + method.spelling + overloadPostfix + "(" + args + "): " + returnType + ";\n"
++      output += "  " + ("static " if (method.is_static_method() and not compat76.bindAsInstance(method)) else "") + method.spelling + overloadPostfix + "(" + args + "): " + returnType + ";\n"
+     return output
+ 
+-  def processOverloadedConstructors(self, theClass, children = None, templateDecl = None, templateArgs = None):
++  def processGivenConstructor(self, theClass, constructor, templateDecl = None, templateArgs = None):
++    argsTypescriptDef = ", ".join(list(map(lambda x: self.getTypescriptDefFromArg(x, "", templateDecl, templateArgs), list(compat76.args(constructor)))))
++    return "  constructor(" + argsTypescriptDef + ")\n"
++
++  def processOverloadedConstructors(self, theClass, children = None, templateDecl = None, templateArgs = None, postfixMap = None):
+     output = ""
+     if children is None:
+       children = list(theClass.get_children())
+     constructors = list(filter(lambda x: x.kind == clang.cindex.CursorKind.CONSTRUCTOR and x.access_specifier == clang.cindex.AccessSpecifier.PUBLIC, children))
+-    if len(constructors) == 1:
++    if len(constructors) == 1 and postfixMap is None:
+       return output
+ 
+     constructorTypescriptDef = ""
+     allOverloadedConstructors = []
+ 
+     for constructor in filter(lambda x: filterMethodOrProperty(theClass, x), constructors):
+-      [overloadPostfix, numOverloads] = getMethodOverloadPostfix(theClass, constructor, children)
++      if postfixMap is not None:
++        if compat76.key(constructor) not in postfixMap:
++          continue
++        overloadPostfix = postfixMap[compat76.key(constructor)]
++      else:
++        [overloadPostfix, numOverloads] = getMethodOverloadPostfix(theClass, constructor, children)
+ 
+-      argsTypescriptDef = ", ".join(list(map(lambda x: self.getTypescriptDefFromArg(x, "", templateDecl, templateArgs), list(constructor.get_arguments()))))
++      argsTypescriptDef = ", ".join(list(map(lambda x: self.getTypescriptDefFromArg(x, "", templateDecl, templateArgs), list(compat76.args(constructor)))))
+       name = getClassTypeName(theClass, templateDecl)
+       constructorTypescriptDef += "  export declare class " + name + overloadPostfix + " extends " + name + " {\n"
+       constructorTypescriptDef += "    constructor(" + argsTypescriptDef + ");\n"
+diff -ruN -x __pycache__ -x compat -x compat76.py -x prepareBindings.py -x compileSources8.py ./buildFromYaml.py ../../ocjs-src/buildFromYaml.py
+--- a/buildFromYaml.py
++++ b/buildFromYaml.py
+@@ -6,11 +6,11 @@
+ from itertools import chain
+ import yaml
+ from generateBindings import generateCustomCodeBindings
+-from compileBindings import compileCustomCodeBindings
++from compileBindings import compileCustomCodeBindings, compileMainBindings
+ import shutil
+ from cerberus import Validator
+ from argparse import ArgumentParser
+-from Common import ocIncludePaths, additionalIncludePaths
++from Common import ocIncludePaths, additionalIncludePaths, cxxStdFlags
+ 
+ parser = ArgumentParser()
+ parser.add_argument(dest="filename", help="Custom build input file (.yml)", metavar="FILE.yml")
+@@ -34,6 +34,9 @@
+ compileCustomCodeBindings({
+   "threading": os.environ['threading'],
+ })
++compileMainBindings({
++  "threading": os.environ['threading'],
++}, set(b["symbol"] for b in chain(buildConfig["mainBuild"]["bindings"], *[x["bindings"] for x in buildConfig["extraBuilds"]])))
+ 
+ def verifyBinding(binding) -> bool:
+   for dirpath, dirnames, filenames in os.walk(libraryBasePath + "/bindings"):
+@@ -80,6 +83,7 @@
+       print("building " + additionalBindCodeFileName)
+       command = [
+         "emcc",
++        *cxxStdFlags,
+         "-flto",
+         "-fexceptions",
+         "-sDISABLE_EXCEPTION_CATCHING=0",
+@@ -106,15 +110,15 @@
+     for item in filenames:
+       if item.endswith(".cpp.o") and shouldProcessSymbol(item[:-6], build["bindings"]):
+         bindingsO.append(dirpath + "/" + item)
+-  sourcesO = []
+-  for dirpath, dirnames, filenames in os.walk(libraryBasePath + "/sources"):
+-    for item in filenames:
+-      if item in [
+-        "XBRepMesh.o",
+-      ]:
+-        continue
+-      if item.endswith(".o"):
+-        sourcesO.append(dirpath + "/" + item)
++  # kernelCAD OCCT 8 port: link OCCT from per-toolkit static archives (built by
++  # compileSources8.py) instead of every object file, so only referenced
++  # members are pulled in. TKXMesh is skipped as before (XBRepMesh clashes
++  # with BRepMesh's plugin factory).
++  sourcesO = sorted(
++    os.path.join(libraryBasePath, "occt-libs", f)
++    for f in os.listdir(libraryBasePath + "/occt-libs")
++    if f.endswith(".a") and f != "libTKXMesh.a"
++  )
+   subprocess.check_call([
+     "emcc", "-lembind", ("" if additionalBindCodeO is None else additionalBindCodeO),
+     *bindingsO, *sourcesO,
+diff -ruN -x __pycache__ -x compat -x compat76.py -x prepareBindings.py -x compileSources8.py ./compileBindings.py ../../ocjs-src/compileBindings.py
+--- a/compileBindings.py
++++ b/compileBindings.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/python3
+ 
+ import os
+-from Common import ocIncludePaths, additionalIncludePaths
++from Common import ocIncludePaths, additionalIncludePaths, cxxStdFlags
+ import subprocess
+ import multiprocessing
+ from functools import partial
+@@ -9,12 +9,14 @@
+ from argparse import ArgumentParser
+ 
+ libraryBasePath = "/opencascade.js/build/bindings"
+-
+-def buildOneFile(args, item):
+-  if not os.path.exists(item + ".o"):
+-    print("building " + item)
+-    command = [
+-      "emcc",
++# kernelCAD OCCT 8 port: every binding source starts by including all ~8000
++# OCCT headers. A precompiled header of exactly those (built by
++# prepareBindings.py with the flags below) halves each binding compile.
++pchPath = "/opencascade.js/build/pch/occt-all.h.pch"
++
++def compileFlags(args):
++  return [
++      *cxxStdFlags,
+       "-flto",
+       "-fexceptions",
+       "-sDISABLE_EXCEPTION_CATCHING=0",
+@@ -23,11 +25,34 @@
+       "-frtti",
+       "-DHAVE_RAPIDJSON",
+       "-Os",
+-      # "-g3",
+-      # "-gsource-map",
+-      # "--source-map-base=http://localhost:8080",
+       "-pthread" if args["threading"] == "multi-threaded" else "",
+       *list(map(lambda x: "-I" + x, ocIncludePaths + additionalIncludePaths)),
++  ]
++
++def buildPch(args):
++  if os.path.exists(pchPath):
++    return
++  from Common import ocIncludeFiles
++  os.makedirs(os.path.dirname(pchPath), exist_ok=True)
++  header = pchPath[:-4]
++  with open(header, "w") as f:
++    f.write("\n".join('#include "' + os.path.basename(x) + '"' for x in sorted(ocIncludeFiles)))
++    f.write("\n#include <emscripten/bind.h>\n#include <functional>\n")
++  print("building " + pchPath)
++  try:
++    subprocess.check_call(["emcc", *compileFlags(args), "-x", "c++-header", header, "-o", pchPath])
++  except BaseException:
++    if os.path.exists(pchPath):
++      os.remove(pchPath)
++    raise
++
++def buildOneFile(args, item):
++  if not os.path.exists(item + ".o"):
++    print("building " + item)
++    command = [
++      "emcc",
++      *compileFlags(args),
++      *(["-include-pch", pchPath] if os.path.exists(pchPath) else []),
+       "-c", item,
+     ]
+     subprocess.check_call([
+@@ -45,6 +70,17 @@
+   with multiprocessing.Pool(processes=int(multiprocessing.cpu_count() / 1)) as p:
+     p.map(partial(buildOneFile, args), sorted(filesToBuild))
+ 
++def compileMainBindings(args, symbols):
++  # kernelCAD OCCT 8 port: compile the generated main bindings a build links
++  # that fix-destructors.py did not already (re)compile.
++  filesToBuild = []
++  for dirpath, dirnames, filenames in os.walk(libraryBasePath):
++    if "/myMain.h" in dirpath + "/":
++      continue
++    filesToBuild.extend(dirpath + "/" + x for x in filenames if x.endswith(".cpp") and x[:-4] in symbols)
++  with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as p:
++    p.map(partial(buildOneFile, args), sorted(filesToBuild))
++
+ if __name__ == "__main__":
+   parser = ArgumentParser()
+   parser.add_argument(dest="threading", choices=["single-threaded", "multi-threaded"], help="Build in single vs. multi-threaded mode")
+diff -ruN -x __pycache__ -x compat -x compat76.py -x prepareBindings.py -x compileSources8.py ./filter/filterIncludeFiles.py ../../ocjs-src/filter/filterIncludeFiles.py
+--- a/filter/filterIncludeFiles.py
++++ b/filter/filterIncludeFiles.py
+@@ -2,6 +2,12 @@
+   if not filename.endswith(".hxx"):
+     return False
+ 
++  # OCCT 8: MathLin_EigenSearch.hxx and MathLin_Jacobi.hxx each see a different
++  # MathLin::EigenResult and cannot be included in one translation unit (no
++  # OCCT header includes either).
++  if filename in ("MathLin_EigenSearch.hxx", "MathLin_Jacobi.hxx"):
++    return False
++
+   # fatal error: 'AIS_LocalStatus.hxx' file not found
+   if (
+     filename == "AIS_DataMapOfSelStat.hxx" or
+diff -ruN -x __pycache__ -x compat -x compat76.py -x prepareBindings.py -x compileSources8.py ./generateBindings.py ../../ocjs-src/generateBindings.py
+--- a/generateBindings.py
++++ b/generateBindings.py
+@@ -8,8 +8,9 @@
+ from filter.filterTypedefs import filterTypedef
+ from filter.filterEnums import filterEnum
+ from wasmGenerator.Common import ignoreDuplicateTypedef, SkipException
+-from Common import ocIncludeFiles, includePathArgs
++from Common import ocIncludeFiles, includePathArgs, cxxStdFlags
+ import json
++import re
+ import multiprocessing
+ import os
+ from filter.filterPackages import filterPackages
+@@ -27,6 +28,16 @@
+     if e.errno != errno.EEXIST:
+       raise
+ 
++# kernelCAD OCCT 8 port: generate only the symbols a build links (OCJS_SYMBOLS =
++# newline-separated file). The full OCCT 8 tree is ~9000 bindings, each of which
++# includes every OCCT header; generating and compiling all of them is hours of
++# work for nothing the custom builds use.
++_symbolsFile = os.environ.get("OCJS_SYMBOLS")
++SYMBOLS = None if not _symbolsFile else set(l.strip() for l in open(_symbolsFile) if l.strip())
++
++def wanted(child):
++  return SYMBOLS is None or child.spelling in SYMBOLS
++
+ def filterClasses(child, customBuild):
+   if customBuild:
+     return (
+@@ -34,6 +45,7 @@
+       shouldProcessClass(child, occtBasePath)
+     )
+   return (
++    wanted(child) and
+     child.extent.start.file.name.startswith(occtBasePath) and
+     filterPackages(os.path.basename(os.path.dirname(child.location.file.name))) and
+     shouldProcessClass(child, occtBasePath)
+@@ -49,7 +61,7 @@
+         child.underlying_typedef_type.kind == clang.cindex.TypeKind.UNEXPOSED
+       )
+     )
+-  return ((
++  return (wanted(child) and (
+       child.extent.start.file.name.startswith(occtBasePath) and
+       filterPackages(os.path.basename(os.path.dirname(child.location.file.name)))
+     ) and
+@@ -63,7 +75,7 @@
+ def filterEnums(child, customBuild):
+   if customBuild:
+     return child.location.file.name == "myMain.h"
+-  return ((
++  return (wanted(child) and (
+       child.extent.start.file.name.startswith(occtBasePath) and
+       filterPackages(os.path.basename(os.path.dirname(child.location.file.name)))
+     ) and
+@@ -73,6 +85,9 @@
+ def processChildBatch(customCode, generator, buildType: str, extension: str, filterFunction: Callable[[any], bool], processFunction: Callable[[any, any], str], typedefGenerator: any, templateTypedefGenerator: any, preamble: str, customBuild: bool, batch):
+   tu = parse(customCode)
+   children = list(generator(tu)[batch.start:batch.stop])
++  # kernelCAD: compute the typedef lists once per batch, not once per symbol
++  # (each is a scan of every top-level cursor of the whole OCCT translation unit).
++  cachedTypedefs = None
+ 
+   for child in children:
+     if not filterFunction(child, customBuild) or child.spelling == "":
+@@ -86,7 +101,9 @@
+     if not os.path.exists(filename):
+       print("Processing " + child.spelling)
+       try:
+-        output = processFunction(tu, preamble, child, typedefGenerator(tu), templateTypedefGenerator(tu))
++        if cachedTypedefs is None:
++          cachedTypedefs = (typedefGenerator(tu), templateTypedefGenerator(tu))
++        output = processFunction(tu, preamble, child, cachedTypedefs[0], cachedTypedefs[1])
+         bindingsFile = open(filename, "w")
+         bindingsFile.write(output)
+       except SkipException as e:
+@@ -133,10 +150,16 @@
+ 
+   return preamble + output
+ 
++def qualifyInjectedClassName(output, templateClass, child):
++  # OCCT 8 spells member types through the injected class name
++  # (`NCollection_Array1::const_iterator`); outside the template that needs the
++  # template arguments, which the typedef supplies.
++  return re.sub(r"(?<![\w:])" + templateClass.spelling + r"::", child.spelling + "::", output)
++
+ def embindGenerationFuncTemplates(tu, preamble, child, typedefs, templateTypedefs) -> str:
+   [templateClass, templateArgs] = processTemplate(child)
+   embindings = EmbindBindings(typedefs, templateTypedefs, tu)
+-  output = embindings.processClass(templateClass, child, templateArgs)
++  output = qualifyInjectedClassName(embindings.processClass(templateClass, child, templateArgs), templateClass, child)
+ 
+   return preamble + output
+ 
+@@ -165,10 +188,55 @@
+ def enumGenerator(tu):
+   return list(filter(lambda x: x.kind == clang.cindex.CursorKind.ENUM_DECL and filterEnum(x), tu.cursor.get_children()))
+ 
++# kernelCAD OCCT 8 port: OCCT 8 turned several classes into deprecated aliases
++# (`using GCE2d_MakeSegment = GC_MakeSegment2d;`). Bind such an alias of a
++# plain class like a class of that name, so the 7.6 JS names keep working.
++def aliasGenerator(tu):
++  return list(filter(lambda x: x.kind == clang.cindex.CursorKind.TYPE_ALIAS_DECL, tu.cursor.get_children()))
++
++def aliasedClass(child):
++  t = child.underlying_typedef_type.get_canonical()
++  if t.kind != clang.cindex.TypeKind.RECORD or t.get_num_template_arguments() != -1:
++    return None
++  return t.get_declaration().get_definition()
++
++def filterAliases(child, customBuild):
++  return (
++    not customBuild and wanted(child) and
++    child.extent.start.file.name.startswith(occtBasePath) and
++    aliasedClass(child) is not None and
++    shouldProcessClass(aliasedClass(child), occtBasePath)
++  )
++
++def embindGenerationFuncAliases(tu, preamble, child, typedefs, templateTypedefs) -> str:
++  target = aliasedClass(child).spelling
++  if SYMBOLS is not None and target in SYMBOLS:
++    # The aliased class is bound under its own name; registering the same C++
++    # type twice aborts embind initialisation, so publish a JS alias instead
++    # once the runtime (and every class registration) is up.
++    return (preamble + "\n#include <emscripten.h>\n"
++      + "static int kcadAliasInit_" + child.spelling + "() {\n  EM_ASM({ addOnPostRun(function() { Module['"
++      + child.spelling + "'] = Module['" + target + "']; }); });\n  return 0;\n}\n"
++      + "static const int kcadAlias_" + child.spelling + " = kcadAliasInit_" + child.spelling + "();\n")
++  embindings = EmbindBindings(typedefs, templateTypedefs, tu)
++  return preamble + embindings.processClass(aliasedClass(child), child, {})
++
++def typescriptGenerationFuncAliases(tu, preamble, child, typedefs, templateTypedefs) -> str:
++  typescript = TypescriptBindings(typedefs, templateTypedefs, tu)
++  output = typescript.processClass(aliasedClass(child), child, {})
++  return json.dumps({
++    ".d.ts": preamble + output,
++    "kind": "class",
++    "exports": typescript.exports,
++  })
++
+ def process(extension, embindGenerationFuncClasses, embindGenerationFuncTemplates, embindGenerationFuncEnums, preamble, customCode, customBuild):
+   processChildren(allChildrenGenerator, "bindings", extension, filterClasses, embindGenerationFuncClasses, typedefGenerator, templateTypedefGenerator, preamble, customCode, customBuild)
+   processChildren(templateTypedefGenerator, "bindings", extension, filterTemplates, embindGenerationFuncTemplates, typedefGenerator, templateTypedefGenerator, preamble, customCode, customBuild)
+   processChildren(enumGenerator, "bindings", extension, filterEnums, embindGenerationFuncEnums, typedefGenerator, templateTypedefGenerator, preamble, customCode, customBuild)
++  if not customBuild:
++    aliasFunc = embindGenerationFuncAliases if extension == ".cpp" else typescriptGenerationFuncAliases
++    processChildren(aliasGenerator, "bindings", extension, filterAliases, aliasFunc, typedefGenerator, templateTypedefGenerator, preamble, customCode, customBuild)
+ 
+ def typescriptGenerationFuncClasses(tu, preamble, child, typedefs, templateTypedefs) -> str:
+   typescript = TypescriptBindings(typedefs, templateTypedefs, tu)
+@@ -208,7 +276,8 @@
+       "-x",
+       "c++",
+       "-stdlib=libc++",
+-      "-D__EMSCRIPTEN__"
++      "-D__EMSCRIPTEN__",
++      *cxxStdFlags,
+     ] + includePathArgs,
+     [["myMain.h", ocIncludeStatements + "\n" + additionalCppCode]]
+   )
+@@ -255,7 +324,7 @@
+   process(".cpp", embindGenerationFuncClasses, embindGenerationFuncTemplates, embindGenerationFuncEnums, embindPreamble, customCode, True)
+   process(".d.ts.json", typescriptGenerationFuncClasses, typescriptGenerationFuncTemplates, typescriptGenerationFuncEnums, "", customCode, True)
+ 
+-if __name__ == "__main__":
++def main():
+   try:
+     os.makedirs(libraryBasePath)
+   except Exception:
+@@ -265,3 +334,6 @@
+   process(".cpp", embindGenerationFuncClasses, embindGenerationFuncTemplates, embindGenerationFuncEnums, embindPreamble, "", False)
+ 
+   process(".d.ts.json", typescriptGenerationFuncClasses, typescriptGenerationFuncTemplates, typescriptGenerationFuncEnums, "", "", False)
++
++if __name__ == "__main__":
++  main()
