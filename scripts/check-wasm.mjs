@@ -165,6 +165,33 @@ for (const variant of (process.env.VARIANTS ?? 'replicad_single,replicad_with_ex
     r.delete();
     return ok;
   });
+  attempt('IGESControl_Reader exact B-rep face transfer', () => {
+    const b = box();
+    const shape = b.Shape();
+    const path = '/kcad-iges-binding-smoke.igs';
+    const writerOk = oc.KernelCAD_IGESWriter.WriteShape(shape, path);
+    const reader = new oc.KernelCAD_IGESReader();
+    const readStatus = reader.ReadFile(path);
+    const transferred = reader.TransferRoots();
+    const imported = reader.OneShape();
+    const counts = [oc.TopAbs_ShapeEnum.TopAbs_SOLID, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_FACE].map(kind => {
+      const explorer = new oc.TopExp_Explorer_2(imported, kind, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+      let n = 0; while (explorer.More()) { n++; explorer.Next(); } explorer.delete(); return n;
+    });
+    imported.delete(); reader.delete(); shape.delete(); b.delete();
+    oc.FS.unlink(path);
+    if (!writerOk) throw new Error('IGESControl_Writer.Write returned false');
+    // OCCT's IFSelect_ReturnStatus enum crosses this custom int-returning
+    // wrapper as its underlying integer (RetDone == 1).
+    if (readStatus !== 1) {
+      throw new Error(`ReadFile status ${readStatus} != IFSelect_RetDone (1)`);
+    }
+    if (transferred <= 0) throw new Error(`TransferRoots returned ${transferred}`);
+    // IGESControl_Reader returns this exported box as a compound of six exact
+    // faces. The runtime sews/promotes closed face sets into validated solids.
+    if (counts[2] !== 6) throw new Error(`OneShape transferred ${counts[2]} faces, expected six`);
+    return true;
+  });
   attempt('GPropWrapper inertia', () => {
     const b = box(); const s = b.Shape();
     const p = new oc.GProp_GProps_1();
