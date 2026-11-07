@@ -331,6 +331,11 @@
     - symbol: STEPCAFControl_Reader
     - symbol: KernelCAD_XCAF
 
+    #! IGES reader/writer use OCCT's exact shape translation path.
+    - symbol: KernelCAD_IGES
+    - symbol: KernelCAD_IGESReader
+    - symbol: KernelCAD_IGESWriter
+
     #! Mass-property accessors returning primitives only — deliberately NOT binding
     #! gp_Mat or GProp_PrincipalProps, which would pull in types we never otherwise use.
     - symbol: GPropWrapper
@@ -351,6 +356,9 @@
   additionalCppCode: |2
     #include <TDF_ChildIterator.hxx>
     #include <Standard_Version.hxx>
+    #include <IGESControl_Controller.hxx>
+    #include <IGESControl_Reader.hxx>
+    #include <IGESControl_Writer.hxx>
 
     class BRepToolsWrapper {
     public:
@@ -396,6 +404,39 @@
       }
       static Standard_Boolean HasSymmetryPoint(const GProp_GProps& props) {
         return props.PrincipalProperties().HasSymmetryPoint();
+      }
+    };
+
+    // Keep IGES reader/writer internals out of the JS surface. The wrapper
+    // exposes only primitive statuses and TopoDS_Shape, so callers can use the
+    // exact B-rep without binding IGES entities or transfer-process handles.
+    class KernelCAD_IGES {
+    public:
+      static void Init() {
+        IGESControl_Controller::Init();
+      }
+    };
+
+    class KernelCAD_IGESReader {
+    public:
+      KernelCAD_IGESReader() { IGESControl_Controller::Init(); }
+      Standard_Integer ReadFile(const std::string& path) {
+        return static_cast<Standard_Integer>(reader.ReadFile(path.c_str()));
+      }
+      Standard_Integer TransferRoots() { return reader.TransferRoots(); }
+      TopoDS_Shape OneShape() { return reader.OneShape(); }
+    private:
+      IGESControl_Reader reader;
+    };
+
+    class KernelCAD_IGESWriter {
+    public:
+      static Standard_Boolean WriteShape(const TopoDS_Shape& shape, const std::string& path) {
+        IGESControl_Controller::Init();
+        IGESControl_Writer writer("MM", 0);
+        writer.AddShape(shape);
+        writer.ComputeModel();
+        return writer.Write(path.c_str());
       }
     };
 

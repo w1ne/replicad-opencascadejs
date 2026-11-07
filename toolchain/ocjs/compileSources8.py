@@ -16,11 +16,11 @@ LIBS = os.environ.get("OCJS_LIBS_OUT", "/opencascade.js/build/occt-libs")
 MODULES = ["FoundationClasses", "ModelingData", "ModelingAlgorithms", "Visualization",
            "ApplicationFramework", "DataExchange"]
 # Toolkits providing the bound classes; their EXTERNLIB.cmake dependency closure
-# is compiled (IGES, VRML, glTF, OBJ, PLY, the Xml/Bin/Std persistence drivers,
+# is compiled (VRML, glTF, OBJ, PLY, the Xml/Bin/Std persistence drivers,
 # TObj and the OpenGL/VTK viewers are not needed by any binding).
 SEED_TK = ["TKernel", "TKMath", "TKG2d", "TKG3d", "TKGeomBase", "TKBRep", "TKGeomAlgo",
            "TKTopAlgo", "TKPrim", "TKBO", "TKBool", "TKFeat", "TKFillet", "TKOffset",
-           "TKShHealing", "TKMesh", "TKHLR", "TKV3d", "TKXSBase", "TKDE", "TKDESTEP",
+           "TKShHealing", "TKMesh", "TKHLR", "TKV3d", "TKXSBase", "TKDE", "TKDESTEP", "TKDEIGES",
            "TKDESTL", "TKXCAF", "TKLCAF", "TKCAF", "TKCDF"]
 
 def toolkitClosure():

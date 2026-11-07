@@ -739,6 +739,26 @@ export declare class KernelCAD_XCAF {
   delete(): void;
 }
 
+export declare class KernelCAD_IGES {
+  constructor();
+  static Init(): void;
+  delete(): void;
+}
+
+export declare class KernelCAD_IGESReader {
+  constructor();
+  ReadFile(path: string): Standard_Integer;
+  TransferRoots(): Standard_Integer;
+  OneShape(): TopoDS_Shape;
+  delete(): void;
+}
+
+export declare class KernelCAD_IGESWriter {
+  constructor();
+  static WriteShape(shape: TopoDS_Shape, path: string): Standard_Boolean;
+  delete(): void;
+}
+
 export declare class GeomToolsWrapper {
   constructor();
   static Write(geometry: Handle_Geom2d_Curve): string;
@@ -9236,6 +9256,9 @@ export type OpenCascadeInstance = {FS: typeof FS} & {
   Handle_HLRBRep_Algo_4: typeof Handle_HLRBRep_Algo_4;
   StdPrs_ToolTriangulatedShape: typeof StdPrs_ToolTriangulatedShape;
   KernelCAD_XCAF: typeof KernelCAD_XCAF;
+  KernelCAD_IGES: typeof KernelCAD_IGES;
+  KernelCAD_IGESReader: typeof KernelCAD_IGESReader;
+  KernelCAD_IGESWriter: typeof KernelCAD_IGESWriter;
   GeomToolsWrapper: typeof GeomToolsWrapper;
   OCJS: typeof OCJS;
   GPropWrapper: typeof GPropWrapper;
